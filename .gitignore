@@ -1,0 +1,30 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Secrets / config
+.env
+*.key
+*.pem
+credentials.json
+
+# Data (large / regenerable — NEVER commit; play_by_play.csv alone is 2.2 GB)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Model artifacts (regenerable)
+models/*
+!models/.gitkeep
+
+# Personal notes (kept locally, not published to public repo)
+docs/*.docx
+
+# OS
+.DS_Store
+Thumbs.db
