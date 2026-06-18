@@ -1,50 +1,120 @@
-# NBA Champion Predictor
+# 🏀 NBA Champion Predictor
 
-A machine-learning system that estimates each team's probability of winning the
-NBA championship. Instead of predicting the champion directly (only one winner
-per year = almost no training signal), it uses the standard, robust approach:
+A machine-learning system that estimates every team's probability of winning
+the NBA championship.
 
-1. **Rate team strength** — an Elo rating updated game-by-game, plus
-   season-level team features (net rating, SRS, offensive/defensive rating, pace).
-2. **Series model** — given two teams' strengths and home-court advantage,
-   estimate the probability that Team A wins a best-of-7 series.
-3. **Bracket simulation** — run the current playoff bracket forward thousands of
-   times (Monte Carlo). The share of simulations a team wins = its title odds.
+Predicting *the* champion directly is a dead end — there's only one winner per
+year, so almost no training signal. Instead this system uses the standard,
+robust approach: **rate team strength → model each playoff series → simulate
+the whole bracket thousands of times.** The share of simulations a team wins
+is its championship probability.
 
-## Project Structure
+## How it works
+
+| Stage | What it does |
+|-------|--------------|
+| **1. Data** | Pulls every regular-season and playoff game (2010-11 → present) from the [balldontlie](https://www.balldontlie.io) API. |
+| **2. Team strength** | Computes FiveThirtyEight-style **Elo ratings** game-by-game: +100 home-court advantage, a margin-of-victory multiplier, and 75% carry-over between seasons. |
+| **3. Series model** | A logistic regression that maps the **Elo gap entering a series** to *P(home-court team wins the best-of-7)*, validated leave-one-season-out. |
+| **4. Bracket simulation** | Builds the 16-team bracket (seeded by regular-season record per conference) and runs a **Monte Carlo simulation** (50k runs) to produce title odds. |
+
+## Does it actually work?
+
+Back-tested across all 16 seasons (`--backtest`), simulating each bracket:
+
+- The eventual champion is assigned **20.1% mean title odds** vs the **6.25%**
+  naive baseline (1/16) — **3.2× better than chance**.
+- The champion was the model's **#1 favorite in 6/16 seasons (38%)** — random ≈ 6%.
+- The champion finished in the model's **top 4 in 11/16 seasons**.
+
+Sanity checks land where they should: **OKC favored at 40% for 2024-25** (the
+actual champion), and Golden State favored in 2014-15 and 2016-17 (both won).
+It also *correctly fails* to predict genuine upsets (2015-16 Cleveland over the
+73-9 Warriors), which is the honest signature of a model that isn't overfit.
+
+**Series-model validation (leave-one-season-out, n = 240 series):**
+
+| Metric | Home-court baseline | Model |
+|--------|--------------------:|------:|
+| Log-loss | 0.596 | **0.583** |
+| Brier | 0.203 | **0.198** |
+| AUC | 0.50 | **0.609** |
+
+AUC of ~0.61 is modest by design — playoff series are inherently high-variance.
+What matters for the simulation is *calibrated probabilities*, and the model
+beats the baseline on both log-loss and Brier.
+
+## Project structure
+
 ```
 NBA-Playoff-Predictions/
 ├── src/
-│   ├── data/          # Data collection from nba_api
-│   ├── features/      # Elo ratings + team strength features
-│   ├── models/        # Series-win model (train + predict)
-│   └── simulation/    # Monte Carlo bracket simulation
-├── data/
-│   ├── raw/           # Raw pulls (incl. archived play_by_play.csv)
-│   └── processed/     # Cleaned, model-ready datasets
-├── models/            # Saved model artifacts (.joblib)
-├── notebooks/         # Exploratory analysis
-└── docs/              # Project notes
+│   ├── data/
+│   │   └── collect_games_balldontlie.py   # Phase 1 — pull games
+│   ├── features/
+│   │   ├── build_elo.py                    # Phase 2 — Elo + team-season strength
+│   │   └── build_series.py                 # Phase 3a — reconstruct best-of-7 series
+│   ├── models/
+│   │   └── train_series_model.py           # Phase 3b — train + validate series model
+│   └── simulation/
+│       ├── bracket.py                      # Phase 4 — bracket + Monte Carlo core
+│       └── simulate_bracket.py             # Phase 4 — CLI + historical back-test
+├── data/                # raw/ + processed/ (gitignored — regenerate with the scripts)
+├── models/              # saved model artifacts (gitignored — regenerate)
+└── requirements.txt
 ```
 
-## Roadmap
-- [ ] **Phase 1 — Data:** regular-season team game logs + playoff series results & brackets (2010→present) via `nba_api`.
-- [ ] **Phase 2 — Team strength:** Elo ratings + season team features.
-- [ ] **Phase 3 — Series model:** train & validate P(win 7-game series) on historical playoffs.
-- [ ] **Phase 4 — Bracket sim:** Monte Carlo the current bracket into per-team title odds.
-- [ ] **Phase 5 — Output:** ranked championship-probability report (re-runnable live during playoffs).
+> Data and model artifacts are **not** committed (they're regenerable and the
+> raw play-by-play archive alone is 2.2 GB). Run the pipeline below to build them.
 
 ## Setup
+
 ```bash
 python -m venv .venv
-.venv\Scripts\activate        # Windows
+.venv\Scripts\activate            # Windows  (use: source .venv/bin/activate on macOS/Linux)
 pip install -r requirements.txt
 ```
 
-## Usage (planned)
-```bash
-python src/data/collect_team_games.py     # Phase 1
-python src/features/build_elo.py          # Phase 2
-python src/models/train_series_model.py   # Phase 3
-python src/simulation/simulate_bracket.py # Phase 4
+Get a free API key at <https://www.balldontlie.io>, then create a `.env` file
+(see `.env.example`):
+
 ```
+BALLDONTLIE_API_KEY=your_key_here
+```
+
+The `.env` file is gitignored and is never committed.
+
+## Usage
+
+Run the full pipeline in order:
+
+```bash
+# 1. Collect games (2010 -> current). ~40 min on the free tier (5 req/min).
+python src/data/collect_games_balldontlie.py
+
+# 2. Build Elo ratings + team-season strength
+python src/features/build_elo.py
+
+# 3. Reconstruct playoff series, then train + validate the series model
+python src/features/build_series.py
+python src/models/train_series_model.py
+
+# 4. Simulate a season's bracket into championship odds
+python src/simulation/simulate_bracket.py --season 2024     # 2024-25
+python src/simulation/simulate_bracket.py --backtest        # validate all seasons
+```
+
+Championship odds are written to `data/processed/title_odds.csv`.
+
+## Limitations & notes
+
+- Team strength uses **Elo entering the playoffs**, held constant across rounds
+  (a standard simplification for a series-level forward simulation).
+- The model intentionally uses a single feature (Elo gap) to avoid overfitting
+  ~240 historical series. Injuries, rest, and matchup effects are not modeled.
+- `stats.nba.com` / `nba_api` are unreachable from many networks, which is why
+  this project uses balldontlie as its data source.
+
+## License
+
+MIT
