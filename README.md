@@ -58,7 +58,8 @@ NBA-Playoff-Predictions/
 │   │   └── train_series_model.py           # Phase 3b — train + validate series model
 │   └── simulation/
 │       ├── bracket.py                      # Phase 4 — bracket + Monte Carlo core
-│       └── simulate_bracket.py             # Phase 4 — CLI + historical back-test
+│       ├── simulate_bracket.py             # Phase 4 — CLI + historical back-test
+│       └── preseason_forecast.py           # Phase 5 — preseason forecast (upcoming season)
 ├── data/                # raw/ + processed/ (gitignored — regenerate with the scripts)
 ├── models/              # saved model artifacts (gitignored — regenerate)
 └── requirements.txt
@@ -102,9 +103,25 @@ python src/models/train_series_model.py
 # 4. Simulate a season's bracket into championship odds
 python src/simulation/simulate_bracket.py --season 2024     # 2024-25
 python src/simulation/simulate_bracket.py --backtest        # validate all seasons
+
+# 5. Preseason forecast for the upcoming (not-yet-played) season
+python src/simulation/preseason_forecast.py
 ```
 
-Championship odds are written to `data/processed/title_odds.csv`.
+Championship odds are written to `data/processed/title_odds.csv`;
+preseason odds to `data/processed/preseason_title_odds.csv`.
+
+### Preseason forecast (upcoming season)
+
+For a season that hasn't been played yet there is no bracket to simulate, so
+`preseason_forecast.py` carries each team's Elo over from the end of the last
+completed season (regressed toward the mean) and Monte-Carlos a full season —
+a simulated regular season for seeding, then the playoff bracket.
+
+**Caveat:** a preseason forecast cannot account for offseason roster changes
+(trades, free agency, the draft, retirements, injuries). It is a strength-
+carryover baseline — the reigning champion is naturally the favorite because
+its deep playoff run inflates its carry-over Elo — not a roster-aware projection.
 
 ## Limitations & notes
 
